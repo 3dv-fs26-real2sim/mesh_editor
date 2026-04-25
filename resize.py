@@ -31,6 +31,13 @@ import numpy as np
 import pyvista as pv
 import vtk
 
+from retex.io_utils import (
+    find_obj as _find_obj,
+    parse_mtl_textures as _parse_mtl_textures,
+    read_obj_vertices as _read_obj_vertices,
+    read_obj_with_tcoords as _read_obj_with_tcoords,
+)
+
 UNITS = "mm"
 
 
@@ -263,95 +270,6 @@ class MeshResizer:
         }
         (out_dir / "scale.json").write_text(json.dumps(meta, indent=2))
         print(f"Saved -> {out_dir}")
-
-
-def _find_obj(source_dir: Path) -> Path:
-    """Pick <dir>.obj if present, otherwise the first .obj in the folder."""
-    preferred = source_dir / f"{source_dir.name}.obj"
-    if preferred.exists():
-        return preferred
-    objs = sorted(source_dir.glob("*.obj"))
-    if not objs:
-        raise SystemExit(f"No .obj file in {source_dir}")
-    return objs[0]
-
-
-def _read_obj_vertices(obj_path: Path) -> np.ndarray:
-    """Parse 'v x y z' lines from the OBJ in file order. Returns (N, 3) float array.
-
-    1-based indexing into this array matches OBJ vertex numbering.
-    """
-    verts: list[list[float]] = []
-    with obj_path.open() as f:
-        for line in f:
-            if line.startswith("v "):
-                parts = line.split()
-                try:
-                    verts.append([float(parts[1]), float(parts[2]), float(parts[3])])
-                except (IndexError, ValueError):
-                    continue
-    return np.asarray(verts, dtype=float)
-
-
-def _parse_mtl_textures(mtl_path: Path, source_dir: Path) -> list[tuple[str, Path | None]]:
-    """Return [(material_name, texture_path_or_None), ...] in MTL order.
-
-    Material names are returned without surrounding quotes.
-    """
-    out: list[tuple[str, Path | None]] = []
-    if not mtl_path.exists():
-        return out
-    cur: str | None = None
-    cur_tex: Path | None = None
-    for raw in mtl_path.read_text().splitlines():
-        line = raw.strip()
-        if line.lower().startswith("newmtl"):
-            if cur is not None:
-                out.append((cur, cur_tex))
-            cur = line.split(None, 1)[1].strip().strip('"')
-            cur_tex = None
-        elif line.lower().startswith("map_kd"):
-            rel = line.split(None, 1)[1].strip()
-            p = source_dir / rel
-            cur_tex = p if p.exists() else None
-    if cur is not None:
-        out.append((cur, cur_tex))
-    return out
-
-
-def _read_obj_with_tcoords(
-    obj_path: Path, textured_materials: set[str] | None = None
-) -> pv.PolyData:
-    """Load an OBJ via vtkOBJReader and activate the TCoords for the textured material.
-
-    Artec exports often have multiple `usemtl` groups. vtkOBJReader stores a
-    separate 2-component point-data array per material (e.g. 'material_0' and
-    '"material_1"'), and may set the wrong one as the active TCoords. We pick
-    the array whose name matches a material that has a map_Kd entry in the MTL.
-    """
-    reader = vtk.vtkOBJReader()
-    reader.SetFileName(str(obj_path))
-    reader.Update()
-    mesh = pv.wrap(reader.GetOutput())
-    pd = mesh.GetPointData()
-
-    candidates: list[str] = []
-    for i in range(pd.GetNumberOfArrays()):
-        arr = pd.GetArray(i)
-        if arr is not None and arr.GetNumberOfComponents() == 2:
-            candidates.append(arr.GetName())
-
-    chosen: str | None = None
-    if textured_materials:
-        for name in candidates:
-            if name.strip('"') in textured_materials:
-                chosen = name
-                break
-    if chosen is None and candidates:
-        chosen = candidates[0]
-    if chosen is not None:
-        pd.SetActiveTCoords(chosen)
-    return mesh
 
 
 def scale_obj_text(src: Path, dst: Path, factor: float) -> None:

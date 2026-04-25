@@ -1,4 +1,4 @@
-name: mesh_resizer
+name: mesh_editor
 channels:
   - conda-forge
 dependencies:
@@ -7,3 +7,5 @@ dependencies:
   - vtk
   - numpy
   - pillow
+  - pyqt
+  - pyvistaqt

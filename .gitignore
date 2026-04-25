@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# Common scratch outputs from the tool
+/tmp_*/
+
